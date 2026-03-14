@@ -1,7 +1,15 @@
 #include "SYsULexer.h" // 确保这里的头文件名与您生成的词法分析器匹配
 #include <fstream>
 #include <iostream>
+#include <cctype>
 #include <unordered_map>
+
+// 全局定义
+int curr_line = 1; // 当前行号
+int curr_col = 1; // 当前列号
+std::string filename; // 文件名
+bool startOfLine = true;
+bool leadingSpace = false;
 
 // 映射定义，将ANTLR的tokenTypeName映射到clang的格式
 std::unordered_map<std::string, std::string> tokenTypeMapping = {
@@ -16,13 +24,70 @@ std::unordered_map<std::string, std::string> tokenTypeMapping = {
   { "Constant", "numeric_constant" },
   { "Return", "return" },
   { "Semi", "semi" },
-  { "EOF", "eof" },
+  { "SPEOF", "eof" },
   { "Equal", "equal" },
   { "Plus", "plus" },
   { "Comma", "comma" },
 
   // 在这里继续添加其他映射
+  { "Minus", "minus" },
+  { "Const", "const" },
+  { "Star", "star" },
+  { "Slash", "slash" },
+  { "Percent", "percent" },
+  { "If", "if" },
+  { "Else", "else" },
+  { "While", "while" },
+  { "For", "for" },
+  { "Void", "void" }, 
+  { "Break", "break" },
+  { "Continue", "continue" },
+  { "Greater", "greater" },
+  { "Less", "less" },
+  { "Ampamp", "ampamp" },
+  { "Pipepipe", "pipepipe" },
+  { "Equalequal", "equalequal" },
+  { "Lessequal", "lessequal" },
+  { "Greaterequal", "greaterequal" },
+  { "Exclaimequal", "exclaimequal" },
+  { "Exclaim", "exclaim" },
 };
+
+
+// 提取开始行号与文件名, 形如 # 1 "./basic/000_main.sysu.c"
+void
+fetch_info(const std::string info_str)
+{
+  /* flag:0 #号部分
+     flag:1 行号部分
+     flag:2 文件名部分
+     flag:-1 尾端不需要的部分
+  */
+  int flag = 0; 
+  std::string line_str;
+  std::string curr_filename;
+  for (const char ch : info_str)
+  {
+    switch (flag)
+    {
+      case 0: {
+        if (ch != '#' && !std::isspace(ch)) {line_str += ch; flag = 1;}
+        break;
+      }
+      case 1: {
+        if (std::isdigit(ch)) {line_str += ch;}
+        else if (!std::isdigit(ch) && !std::isspace(ch)) {curr_line = std::stoi(line_str); flag = 2;} // 掠过引号
+        break;
+      }
+      case 2: {
+        if (ch != '"') {curr_filename += ch;}
+        else {flag = -1;}
+        break;
+      }
+    }
+  }
+  filename = curr_filename;
+}
 
 void
 print_token(const antlr4::Token* token,
@@ -30,6 +95,8 @@ print_token(const antlr4::Token* token,
             std::ofstream& outFile,
             const antlr4::Lexer& lexer)
 {
+  if(token->getText() == "<EOF>") return;
+
   auto& vocabulary = lexer.getVocabulary();
 
   auto tokenTypeName =
@@ -37,25 +104,51 @@ print_token(const antlr4::Token* token,
 
   if (tokenTypeName.empty())
     tokenTypeName = "<UNKNOWN>"; // 处理可能的空字符串情况
+  else if (tokenTypeName == "FileMetaData")
+  {
+    fetch_info(token->getText());
+    return;
+  }
+  else if (tokenTypeName == "Newline")
+  {
+    curr_line ++;
+    curr_col = 1;
+    startOfLine = true;
+    leadingSpace = false;
+    return;
+  }
+  else if (tokenTypeName == "Whitespace")
+  {
+    leadingSpace = true;
+    curr_col += token->getText().length();
+    return;
+  }
 
   if (tokenTypeMapping.find(tokenTypeName) != tokenTypeMapping.end()) {
     tokenTypeName = tokenTypeMapping[tokenTypeName];
   }
-  std::string locInfo = " Loc=<0:0>";
 
-  bool startOfLine = false;
-  bool leadingSpace = false;
-
-  if (token->getText() != "<EOF>")
-    outFile << tokenTypeName << " '" << token->getText() << "'";
+  if (tokenTypeName != "eof")
+    outFile << tokenTypeName << " '" << token->getText() << "'" << "\t";
   else
-    outFile << tokenTypeName << " '"
-            << "'";
+    outFile << tokenTypeName << " '" << "'" << "\t";
+
+  
   if (startOfLine)
-    outFile << "\t [StartOfLine]";
+  {
+    outFile << " [StartOfLine]";
+    startOfLine = false;
+  }
   if (leadingSpace)
+  {
     outFile << " [LeadingSpace]";
+    leadingSpace = false;
+  }
+
+  std::string locInfo = "\tLoc=<" + filename + ":" + std::to_string(curr_line) + ":" + std::to_string(curr_col) + ">";
   outFile << locInfo << std::endl;
+
+  curr_col += token->getText().length();
 }
 
 int
