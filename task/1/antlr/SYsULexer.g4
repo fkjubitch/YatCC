@@ -83,9 +83,8 @@ OctalConstant
 
 fragment
 HexConstant
-    :   '0x' HexDigit*
+    :   ('0x' | '0X') HexDigit*
     ;
-
 
 fragment
 NonzeroDigit
@@ -99,7 +98,7 @@ OctalDigit
 
 fragment
 HexDigit
-    :   [0-9a-f]
+    :   [0-9a-fA-F]
     ;
 
 
@@ -125,13 +124,12 @@ Newline
         )
     ;
 
-// EOF特殊匹配
-SPEOF
-    : Newline EOF
-    ;
-
 // 注释
 SingleLineComment
     :   '//' ~[\r\n]*
         -> skip
+    ;
+
+MultiLineComment
+    :   '/*' .*? '*/'
     ;

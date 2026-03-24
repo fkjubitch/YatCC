@@ -11,6 +11,10 @@ std::string filename; // 文件名
 bool startOfLine = true;
 bool leadingSpace = false;
 
+// 保存最后一个有效token之后的位置（用于EOF）
+int last_token_end_line = 1;
+int last_token_end_col = 1;
+
 // 映射定义，将ANTLR的tokenTypeName映射到clang的格式
 std::unordered_map<std::string, std::string> tokenTypeMapping = {
   { "Int", "int" },
@@ -24,7 +28,7 @@ std::unordered_map<std::string, std::string> tokenTypeMapping = {
   { "Constant", "numeric_constant" },
   { "Return", "return" },
   { "Semi", "semi" },
-  { "SPEOF", "eof" },
+  { "EOF", "eof" },
   { "Equal", "equal" },
   { "Plus", "plus" },
   { "Comma", "comma" },
@@ -95,8 +99,6 @@ print_token(const antlr4::Token* token,
             std::ofstream& outFile,
             const antlr4::Lexer& lexer)
 {
-  if(token->getText() == "<EOF>") return;
-
   auto& vocabulary = lexer.getVocabulary();
 
   auto tokenTypeName =
@@ -123,6 +125,20 @@ print_token(const antlr4::Token* token,
     curr_col += token->getText().length();
     return;
   }
+  else if (tokenTypeName == "MultiLineComment")
+  {
+    // 计算多行注释中的换行符数量
+    std::string text = token->getText();
+    for (char c : text) {
+      if (c == '\n') {
+        curr_line++;
+        curr_col = 1;
+      } else {
+        curr_col++;
+      }
+    }
+    return;
+  }
 
   if (tokenTypeMapping.find(tokenTypeName) != tokenTypeMapping.end()) {
     tokenTypeName = tokenTypeMapping[tokenTypeName];
@@ -134,21 +150,34 @@ print_token(const antlr4::Token* token,
     outFile << tokenTypeName << " '" << "'" << "\t";
 
   
-  if (startOfLine)
-  {
-    outFile << " [StartOfLine]";
-    startOfLine = false;
-  }
-  if (leadingSpace)
-  {
-    outFile << " [LeadingSpace]";
-    leadingSpace = false;
+  if (tokenTypeName != "eof") {
+    if (startOfLine)
+    {
+      outFile << " [StartOfLine]";
+      startOfLine = false;
+    }
+    if (leadingSpace)
+    {
+      outFile << " [LeadingSpace]";
+      leadingSpace = false;
+    }
   }
 
-  std::string locInfo = "\tLoc=<" + filename + ":" + std::to_string(curr_line) + ":" + std::to_string(curr_col) + ">";
+  std::string locInfo;
+  if (tokenTypeName == "eof") {
+    // 对于EOF，使用最后一个有效token之后的位置
+    locInfo = "\tLoc=<" + filename + ":" + std::to_string(last_token_end_line) + ":" + std::to_string(last_token_end_col) + ">";
+  } else {
+    locInfo = "\tLoc=<" + filename + ":" + std::to_string(curr_line) + ":" + std::to_string(curr_col) + ">";
+    // 更新最后一个有效token之后的位置
+    last_token_end_line = curr_line;
+    last_token_end_col = curr_col + token->getText().length();
+  }
   outFile << locInfo << std::endl;
 
-  curr_col += token->getText().length();
+  if (tokenTypeName != "eof") {
+    curr_col += token->getText().length();
+  }
 }
 
 int
